@@ -3,7 +3,6 @@ package co.ledger.wallet.daemon.models
 
 import co.ledger.core
 import co.ledger.wallet.daemon.async.MDCPropagatingExecutionContext.Implicits.global
-import co.ledger.wallet.daemon.database.PoolDto
 import co.ledger.wallet.daemon.exceptions.UnsupportedNativeSegwitException
 import co.ledger.wallet.daemon.models.Account._
 import co.ledger.wallet.daemon.models.Currency.RichCoreCurrency
@@ -27,7 +26,7 @@ class WalletTest extends AssertionsForJUnit {
     "88c2281acd51737c912af74cc1d1a8ba564eb7925e0d58a5500b004ba76099cb")
 
   @Test def verifyWalletActivities(): Unit = {
-    val testPool = Pool.newInstance(Await.result(Pool.newCoreInstance(new PoolDto("random", 2L, "", Option(0L))), Duration.Inf), 1L)
+    val testPool = Pool.newInstance(Await.result(Pool.newCoreInstance("random"), Duration.Inf))
 
     val testWallet = Await.result(testPool.addWalletIfNotExist("test_wallet", "bitcoin", isNativeSegwit = false), Duration.Inf)
 
@@ -82,7 +81,7 @@ class WalletTest extends AssertionsForJUnit {
   }
 
   @Test def verifyWalletSupportNativeSegwit(): Unit = {
-    val testPool = Pool.newInstance(Await.result(Pool.newCoreInstance(new PoolDto("random", 2L, "", Option(0L))), Duration.Inf), 1L)
+    val testPool = Pool.newInstance(Await.result(Pool.newCoreInstance("random"), Duration.Inf))
 
     val testWalletBitcoinNativeSegwit = Await.result(testPool.addWalletIfNotExist("test_wallet_bitcoin_native_segwit", "bitcoin", isNativeSegwit = true), Duration.Inf)
 
