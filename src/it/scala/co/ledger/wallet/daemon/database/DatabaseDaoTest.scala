@@ -15,23 +15,23 @@ class DatabaseDaoTest extends AssertionsForJUnit {
 
   @Test
   def createAndGetPool(): Unit = {
-    Await.result(dbDao.insertPool(PoolDto("testPool1")), Duration.Inf)
-    val pool = Await.result(dbDao.getPool("testPool"), Duration.Inf)
+    Await.result(dbDao.insertPool(PoolDto("test_pool1")), Duration.Inf)
+    val pool = Await.result(dbDao.getPool("test_pool1"), Duration.Inf)
     assertTrue(pool.isDefined)
   }
 
   @Test
   def allPools(): Unit = {
-    Await.result(dbDao.insertPool(PoolDto("testPool2")), Duration.Inf)
+    Await.result(dbDao.insertPool(PoolDto("test_pool2")), Duration.Inf)
     val pool = Await.result(dbDao.getPools, Duration.Inf)
     assertTrue(pool.nonEmpty)
   }
 
   @Test
   def deletePool(): Unit = {
-    Await.result(dbDao.insertPool(PoolDto("testPool3")), Duration.Inf)
-    Await.result(dbDao.deletePool("testPool3"), Duration.Inf)
-    val pool = Await.result(dbDao.getPool("testPool3"), Duration.Inf)
+    Await.result(dbDao.insertPool(PoolDto("test_pool3")), Duration.Inf)
+    Await.result(dbDao.deletePool("test_pool3"), Duration.Inf)
+    val pool = Await.result(dbDao.getPool("test_pool3"), Duration.Inf)
     assertTrue(pool.isEmpty)
   }
 

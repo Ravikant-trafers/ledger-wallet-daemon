@@ -79,15 +79,15 @@ class DefaultDaemonCache() extends DaemonCache with Logging {
   private val poolCache: concurrent.Map[String, Pool] = new ConcurrentHashMap[String, Pool]().asScala
 
   /**
-   * Delete pool will:
-   *  1. remove the pool from daemon database
-   *  2. unsubscribe event receivers to core library, see details on method `clear` from `Pool`
-   *  3. remove the operations were done on this pool, which includes all underlying wallets and accounts
-   *  4. remove the pool from cache.
-   *
-   * @param name the name of wallet pool needs to be deleted.
-   * @return a Future of Unit.
-   */
+    * Delete pool will:
+    *  1. remove the pool from daemon database
+    *  2. unsubscribe event receivers to core library, see details on method `clear` from `Pool`
+    *  3. remove the operations were done on this pool, which includes all underlying wallets and accounts
+    *  4. remove the pool from cache.
+    *
+    * @param name the name of wallet pool needs to be deleted.
+    * @return a Future of Unit.
+    */
   def deletePool(name: String)(implicit ec: ExecutionContext): Future[Unit] = {
     dbDao.deletePool(name).flatMap { deletedPool =>
       if (deletedPool > 0) opsCache.deleteOperations(name)
@@ -118,13 +118,13 @@ class DefaultDaemonCache() extends DaemonCache with Logging {
   }
 
   /**
-   * Getter for individual pool with specified name. This method will perform a daemon database search in order
-   * to get the most up to date information. If specified pool doesn't exist in database but in cache. The cached
-   * pool will be cleared. See `clear` method from Pool for detailed actions.
-   *
-   * @param name the name of wallet pool.
-   * @return a Future of `co.ledger.wallet.daemon.models.Pool` instance Option.
-   */
+    * Getter for individual pool with specified name. This method will perform a daemon database search in order
+    * to get the most up to date information. If specified pool doesn't exist in database but in cache. The cached
+    * pool will be cleared. See `clear` method from Pool for detailed actions.
+    *
+    * @param name the name of wallet pool.
+    * @return a Future of `co.ledger.wallet.daemon.models.Pool` instance Option.
+    */
   def pool(name: String)(implicit ec: ExecutionContext): Future[Option[Pool]] = {
     dbDao.getPool(name).flatMap {
       case Some(p) => toCacheAndStartListen(p).map(Option(_))
@@ -145,12 +145,12 @@ class DefaultDaemonCache() extends DaemonCache with Logging {
   }
 
   /**
-   * Obtain available pools of this user. The method performs database call(s), adds the missing
-   * pools to cache.
-   *
-   * @return the resulting pools. The result may contain less entities
-   *         than the cached entities.
-   */
+    * Obtain available pools of this user. The method performs database call(s), adds the missing
+    * pools to cache.
+    *
+    * @return the resulting pools. The result may contain less entities
+    *         than the cached entities.
+    */
   def pools(implicit ec: ExecutionContext): Future[Seq[Pool]] = for {
     poolDtos <- dbDao.getPools
     pools <- Future.sequence(poolDtos.map { pool => toCacheAndStartListen(pool) })
