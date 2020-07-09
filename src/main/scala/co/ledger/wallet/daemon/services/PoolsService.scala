@@ -4,7 +4,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import co.ledger.wallet.daemon.async.MDCPropagatingExecutionContext.Implicits.global
 import co.ledger.wallet.daemon.database.DaemonCache
-import co.ledger.wallet.daemon.database.DefaultDaemonCache.User
 import co.ledger.wallet.daemon.exceptions.{AccountSyncException, SyncOnGoingException}
 import co.ledger.wallet.daemon.models.Account._
 import co.ledger.wallet.daemon.models.Wallet._
@@ -19,14 +18,12 @@ import scala.util.{Failure, Try}
 @Singleton
 class PoolsService @Inject()(daemonCache: DaemonCache) extends DaemonService {
 
-  import PoolsService._
-
-  def createPool(poolInfo: PoolInfo, configuration: PoolConfiguration): Future[WalletPoolView] = {
-    daemonCache.createWalletPool(poolInfo, configuration.toString).flatMap(_.view)
+  def createPool(poolInfo: PoolInfo): Future[WalletPoolView] = {
+    daemonCache.createWalletPool(poolInfo).flatMap(_.view)
   }
 
-  def pools(user: User): Future[Seq[WalletPoolView]] = {
-    daemonCache.getWalletPools(user.pubKey).flatMap { pools => Future.sequence(pools.map(_.view)) }
+  def pools: Future[Seq[WalletPoolView]] = {
+    daemonCache.pools.flatMap { pools => Future.sequence(pools.map(_.view)) }
   }
 
   def pool(poolInfo: PoolInfo): Future[Option[WalletPoolView]] = {
@@ -37,7 +34,7 @@ class PoolsService @Inject()(daemonCache: DaemonCache) extends DaemonService {
   }
 
   def removePool(poolInfo: PoolInfo): Future[Unit] = {
-    daemonCache.deleteWalletPool(poolInfo)
+    daemonCache.deletePool(poolInfo.poolName)
   }
 
   /**
@@ -56,8 +53,7 @@ class PoolsService @Inject()(daemonCache: DaemonCache) extends DaemonService {
     } else {
       syncOnGoing.set(true)
       val accountsFuture = for {
-        users <- daemonCache.getUsers
-        pools <- Future.sequence(users.map(_.pools())).map(_.flatten)
+        pools <- daemonCache.pools
         wallets <- Future.sequence(pools.map { p =>
           for {
             wallets <- p.wallets
@@ -95,13 +91,5 @@ class PoolsService @Inject()(daemonCache: DaemonCache) extends DaemonService {
     */
   def syncOperations(poolInfo: PoolInfo): Future[Seq[SynchronizationResult]] =
     daemonCache.withWalletPool(poolInfo)(_.sync())
-
-}
-
-object PoolsService {
-
-  case class PoolConfiguration() {
-    override def toString: String = ""
-  }
 
 }

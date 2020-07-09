@@ -6,7 +6,7 @@ import co.ledger.wallet.daemon.async.MDCPropagatingExecutionContext.Implicits.gl
 import co.ledger.wallet.daemon.configurations.DaemonConfiguration
 import co.ledger.wallet.daemon.database.{DaemonCache, DefaultDaemonCache}
 import co.ledger.wallet.daemon.exceptions.AccountSyncException
-import co.ledger.wallet.daemon.services.{PoolsService, UsersService}
+import co.ledger.wallet.daemon.services.PoolsService
 import com.google.inject.Provides
 import com.twitter.concurrent.NamedPoolThreadFactory
 import com.twitter.inject.{Injector, TwitterModule}
@@ -65,26 +65,16 @@ object DaemonCacheModule extends TwitterModule {
         s"interval ${DaemonConfiguration.Synchronization.interval} hours")
     }
 
-    val usersService = injector.instance[UsersService](classOf[UsersService])
-    DaemonConfiguration.adminUsers.map { user =>
-      val existingUser = Await.result(usersService.user(user._1, user._2), 1.minutes)
-      if (existingUser.isEmpty) Await.result(usersService.createUser(user._1, user._2), 1.minutes)
-    }
-    DaemonConfiguration.whiteListUsers.map { user =>
-      val existingUser = Await.result(usersService.user(user._1), 1.minutes)
-      if (existingUser.isEmpty) Await.result(usersService.createUser(user._1, user._2), 1.minutes)
-    }
-
+    val daemonCache = injector.instance[DaemonCache](classOf[DaemonCache])
     if (DaemonConfiguration.updateWalletConfig) {
-      Await.result(updateWalletConfig(), 5.minutes)
+      Await.result(updateWalletConfig(daemonCache), 5.minutes)
     }
     startSynchronization()
   }
 
-  private def updateWalletConfig(): Future[Unit] = {
+  private def updateWalletConfig(daemonCache: DaemonCache): Future[Unit] = {
     for {
-      users <- provideDaemonCache.getUsers
-      pools <- Future.traverse(users)(_.pools()).map(_.flatten)
+      pools <- daemonCache.pools
       poolWallets <- Future.traverse(pools)(pool => pool.wallets.map((pool, _)))
       _ <- Future.sequence(poolWallets.flatMap { case (pool, wallets) => wallets.map(pool.updateWalletConfig) })
     } yield ()

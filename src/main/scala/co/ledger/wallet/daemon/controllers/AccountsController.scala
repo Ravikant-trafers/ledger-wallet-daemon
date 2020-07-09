@@ -47,7 +47,7 @@ class AccountsController @Inject()(accountsService: AccountsService) extends Con
     filter[DeprecatedRouteFilter].filter[AccountCreationFilter]
       .post("/accounts") { request: AccountsRequest =>
         info(s"CREATE account $request, " +
-          s"Parameters(user: ${request.user.id}, pool_name: ${request.pool_name}, wallet_name: ${request.wallet_name}), " +
+          s"Parameters(pool_name: ${request.pool_name}, wallet_name: ${request.wallet_name}), " +
           s"Body(${request.request.accountCreationBody}")
         accountsService.createAccount(request.request.accountCreationBody, request.walletInfo)
       }
@@ -56,7 +56,7 @@ class AccountsController @Inject()(accountsService: AccountsService) extends Con
     filter[DeprecatedRouteFilter].filter[AccountExtendedCreationFilter]
       .post("/accounts/extended") { request: AccountsRequest =>
         info(s"CREATE account ${request.request}, " +
-          s"Parameters(user: ${request.user.id}, pool_name: ${request.pool_name}, wallet_name: ${request.wallet_name}), " +
+          s"Parameters(pool_name: ${request.pool_name}, wallet_name: ${request.wallet_name}), " +
           s"Body(${request.request.accountExtendedCreationBody}")
         accountsService.createAccountWithExtendedInfo(request.request.accountExtendedCreationBody, request.walletInfo)
       }
@@ -208,7 +208,7 @@ object AccountsController {
   private val DEFAULT_OPERATION_MODE: Int = 0
 
 
-  abstract class BaseAccountRequest extends RequestWithUser with WithWalletInfo {
+  abstract class BaseAccountRequest extends WithWalletInfo {
     val pool_name: String
     val wallet_name: String
 
@@ -358,7 +358,7 @@ object AccountsController {
                                          @RouteParam wallet_name: String,
                                          @QueryParam account_index: Option[Int],
                                          request: Request
-                                       ) extends RequestWithUser with WithWalletInfo {
+                                       ) extends WithWalletInfo {
     @MethodValidation
     def validatePoolName: ValidationResult = CommonMethodValidations.validateName("pool_name", pool_name)
 

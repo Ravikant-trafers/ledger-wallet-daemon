@@ -32,7 +32,7 @@ class OperationCache extends Logging {
     * Create and insert an operation query record.
     *
     * @param id the UUID of this operation query record.
-    * @param poolId the identifier of pool in database.
+    * @param poolName the identifier of pool in database.
     * @param walletName the name of wallet.
     * @param accountIndex the unique index of the account.
     * @param offset the offset to the last operation of the total operations.
@@ -43,7 +43,7 @@ class OperationCache extends Logging {
     */
   def insertOperation(
                        id: UUID,
-                       poolId: Long,
+                       poolName: String,
                        walletName: String,
                        accountIndex: Int,
                        offset: Int,
@@ -52,12 +52,12 @@ class OperationCache extends Logging {
                        previous: Option[UUID]): AtomicRecord = {
     if (cache.contains(id)) { cache(id) }
     else {
-      val newRecord = new AtomicRecord(id, poolId, Option(walletName), Option(accountIndex), batch, new AtomicInteger(offset), next, previous)
+      val newRecord = new AtomicRecord(id, poolName, Option(walletName), Option(accountIndex), batch, new AtomicInteger(offset), next, previous)
       cache.put(id, newRecord)
       next.map { nexts.put(_, id)}
-      poolTrees.get(poolId) match {
+      poolTrees.get(poolName) match {
         case Some(poolTree) => poolTree.insertOperation(walletName, accountIndex, newRecord.id)
-        case None => poolTrees.put(poolId, newPoolTreeInstance(poolId, walletName, accountIndex, newRecord.id))
+        case None => poolTrees.put(poolName, newPoolTreeInstance(poolName, walletName, accountIndex, newRecord.id))
       }
       newRecord
     }
@@ -77,14 +77,13 @@ class OperationCache extends Logging {
     *
     * @param id the UUID of query record candidate.
     * @return a operation query record.
-    * @throws co.ledger.wallet.daemon.exceptions.OperationNotFoundException when there is no record found with the UUID.
     */
   def getOperationCandidate(id: UUID): AtomicRecord = {
     cache.getOrElse(id, nexts.get(id) match {
       case Some(current) => cache.get(current) match {
         case Some(record) => new AtomicRecord(
           id,
-          record.poolId,
+          record.poolName,
           record.walletName,
           record.accountIndex,
           record.batch,
@@ -111,7 +110,6 @@ class OperationCache extends Logging {
     *
     * @param id the UUID of query record, the record should already exist.
     * @return the operation query record.
-    * @throws co.ledger.wallet.daemon.exceptions.OperationNotFoundException when there is no record found with the UUID.
     */
   def getPreviousOperationRecord(id: UUID): AtomicRecord = {
     cache.getOrElse(id, nexts.get(id) match {
@@ -123,17 +121,17 @@ class OperationCache extends Logging {
   /**
     * Update offset of existing records with specified identifiers.
     *
-    * @param poolId the pool identifier in database.
+    * @param poolName the pool identifier in database.
     * @param walletName the name of the wallet.
     * @param accountIndex the unique index of account.
     */
-  def updateOffset(poolId: Long, walletName: String, accountIndex: Int): Unit = {
-    if (poolTrees.contains(poolId)) {
-      poolTrees(poolId).operations(walletName, accountIndex).foreach { op =>
+  def updateOffset(poolName: String, walletName: String, accountIndex: Int): Unit = {
+    if (poolTrees.contains(poolName)) {
+      poolTrees(poolName).operations(walletName, accountIndex).foreach { op =>
         val lastOffset = cache(op).incrementOffset()
         debug(LogMsgMaker.newInstance("Update offset")
           .append("to", lastOffset)
-          .append("pool", poolId)
+          .append("pool", poolName)
           .append("wallet", walletName)
           .append("account", accountIndex)
           .toString())
@@ -141,13 +139,8 @@ class OperationCache extends Logging {
     }
   }
 
-  /**
-    * Delete operations of specified pool id.
-    *
-    * @param pool the pool id.
-    */
-  def deleteOperations(pool: Long): Unit = {
-    poolTrees.remove(pool).foreach { poolTree =>
+  def deleteOperations(poolName: String): Unit = {
+    poolTrees.remove(poolName).foreach { poolTree =>
       poolTree.operations.foreach { op =>
         // remove operation record from cache and nexts
         cache.remove(op).map { record => record.next.map { nextUUID => nexts.remove(nextUUID) } }
@@ -155,16 +148,16 @@ class OperationCache extends Logging {
     }
   }
 
-  private def newPoolTreeInstance(pool: Long, wallet: String, account: Int, operation: UUID): PoolTree = {
+  private def newPoolTreeInstance(poolName: String, wallet: String, account: Int, operation: UUID): PoolTree = {
     val wallets: Cache[String, WalletTree] = newCache
     wallets.put(wallet, newWalletTreeInstance(wallet, account, operation))
-    new PoolTree(pool, wallets)
+    new PoolTree(poolName, wallets)
   }
   private[this] val cache: Cache[UUID, AtomicRecord] = newCache[UUID, AtomicRecord]
   private[this] val nexts: Cache[UUID, UUID] = newCache[UUID, UUID]
-  private[this] val poolTrees: Cache[java.lang.Long, PoolTree] = new ConcurrentHashMap[java.lang.Long, PoolTree].asScala
+  private[this] val poolTrees: Cache[String, PoolTree] = new ConcurrentHashMap[String, PoolTree].asScala
 
-  class PoolTree(val poolId: Long, val wallets: Cache[String, WalletTree]) {
+  class PoolTree(val poolName: String, val wallets: Cache[String, WalletTree]) {
 
     def insertOperation(wallet: String, account: Int, operation: UUID): Unit = wallets.get(wallet) match {
       case Some(tree) => tree.insertOperation(account, operation)
@@ -206,7 +199,7 @@ class OperationCache extends Logging {
   }
 
   class AtomicRecord(val id: UUID,
-                     val poolId: Long,
+                     val poolName: String,
                      val walletName: Option[String],
                      val accountIndex: Option[Int],
                      val batch: Int,

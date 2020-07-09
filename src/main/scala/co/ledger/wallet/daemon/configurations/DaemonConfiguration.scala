@@ -1,7 +1,6 @@
 package co.ledger.wallet.daemon.configurations
 
 import java.net.URL
-import java.util.Locale
 
 import co.ledger.wallet.daemon.utils.NetUtils
 import co.ledger.wallet.daemon.utils.NetUtils.Host
@@ -10,13 +9,10 @@ import com.typesafe.config.ConfigFactory
 import slick.jdbc.JdbcProfile
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ListBuffer
 import scala.util.Try
 
 object DaemonConfiguration extends Logging {
   private val config = ConfigFactory.load()
-  private val PERMISSION_CREATE_USER: Int = 0x01
-  private val DEFAULT_AUTH_TOKEN_DURATION: Int = 3600 * 1000 // 30 seconds
   private val DEFAULT_SYNC_INTERVAL: Int = 24 // 24 hours
   private val DEFAULT_SYNC_INITIAL_DELAY: Int = 300 // 5 minutes
   // Default value for keeping alive connections inside the client connection pool
@@ -53,38 +49,6 @@ object DaemonConfiguration extends Logging {
   val supportedNativeSegwitCurrencies: List[String] = if (config.hasPath("native_segwit_currencies")) {
     config.getStringList("native_segwit_currencies").asScala.toList
   } else List[String]()
-
-  val adminUsers: Seq[(String, String)] = if (config.hasPath("demo_users")) {
-    val usersConfig = config.getConfigList("demo_users").asScala
-    for {
-      userConfig <- usersConfig
-    } yield (userConfig.getString("username"), userConfig.getString("password"))
-
-  } else {
-    List[(String, String)]()
-  }
-
-  val whiteListUsers: Seq[(String, Int)] = if (config.hasPath("whitelist")) {
-    val usersConfig = config.getConfigList("whitelist")
-    val users = new ListBuffer[(String, Int)]()
-    for (i <- 0 until usersConfig.size()) {
-      val userConfig = usersConfig.get(i)
-      val pubKey = userConfig.getString("key").toUpperCase(Locale.US)
-      val permissions = if (Try(userConfig.getBoolean("account_creation")).getOrElse(false)) PERMISSION_CREATE_USER else 0
-      users += ((pubKey, permissions))
-    }
-    users.toList
-  } else {
-    List[(String, Int)]()
-  }
-
-  val authTokenDuration: Int =
-    if (config.hasPath("authentication.token_duration")) {
-      config.getInt("authentication.token_duration_in_seconds") * 1000
-    }
-    else {
-      DEFAULT_AUTH_TOKEN_DURATION
-    }
 
   val dbProfileName: String = Try(config.getString("database_engine")).toOption.getOrElse("sqlite3")
 

@@ -6,11 +6,9 @@ import java.util.concurrent.Executors
 
 import co.ledger.wallet.daemon.database.DBMigrations.Migrations
 import co.ledger.wallet.daemon.exceptions._
-import co.ledger.wallet.daemon.utils.HexUtils
 import com.twitter.inject.Logging
 import javax.inject.{Inject, Singleton}
 import slick.jdbc.JdbcBackend.Database
-import slick.jdbc.TransactionIsolation
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -50,51 +48,18 @@ class DatabaseDao @Inject()(db: Database) extends Logging {
     }
   }
 
-  def deletePool(poolName: String, userId: Long): Future[Option[PoolDto]] = {
-    val query = filterPool(poolName, userId)
-    val action = for {
-      result <- query.result.headOption
-      _ <- query.delete
-    } yield result
-    db.run(action.withTransactionIsolation(TransactionIsolation.Serializable)).map { row =>
-      row.map(createPool)
-    }
+  def deletePool(poolName: String): Future[Int] = {
+    safeRun(pools.filter(_.name === poolName).delete)
   }
 
-  def getPools(userId: Long): Future[Seq[PoolDto]] =
-    safeRun(pools.filter(pool => pool.userId === userId.bind).sortBy(_.id.desc).result).map { rows => rows.map(createPool)}
+  def getPools: Future[Seq[PoolDto]] =
+    safeRun(pools.result).map(_.map(r => PoolDto(r.name)))
 
-  def getPool(userId: Long, poolName: String): Future[Option[PoolDto]] =
-    safeRun(pools.filter(pool => pool.userId === userId && pool.name === poolName).result.headOption).map { row => row.map(createPool)}
+  def getPool(name: String): Future[Option[PoolDto]] =
+    safeRun(pools.filter(_.name === name).result.headOption).map(_.map(r => PoolDto(r.name)))
 
-  def getUser(targetPubKey: Array[Byte]): Future[Option[UserDto]] = {
-    getUser(HexUtils.valueOf(targetPubKey))
-  }
-
-  def getUser(pubKey: String): Future[Option[UserDto]] =
-    safeRun(filterUser(pubKey).result.headOption).map { userRow => userRow.map(createUser)}
-
-  def getUsers: Future[Seq[UserDto]] =
-    safeRun(users.result).map { rows => rows.map(createUser)}
-
-  def insertPool(newPool: PoolDto): Future[Long] = {
-    safeRun(filterPool(newPool.name, newPool.userId).exists.result.flatMap { exists =>
-      if (!exists) {
-        pools.returning(pools.map(_.id)) += createPoolRow(newPool)
-      } else {
-        DBIO.failed(WalletPoolAlreadyExistException(newPool.name))
-      }
-    })
-  }
-
-  def insertUser(newUser: UserDto): Future[Long] = {
-    safeRun(filterUser(newUser.pubKey).exists.result.flatMap { (exists) =>
-      if (!exists) {
-        users.returning(users.map(_.id)) += createUserRow(newUser)
-      } else {
-        DBIO.failed(UserAlreadyExistException(newUser.pubKey))
-      }
-    })
+  def insertPool(newPool: PoolDto): Future[Int] = {
+    safeRun(pools.insertOrUpdate(PoolRow(newPool.name)))
   }
 
   private def safeRun[R](query: DBIO[R]): Future[R] =
@@ -103,40 +68,9 @@ class DatabaseDao @Inject()(db: Database) extends Logging {
       case others: Throwable => Future.failed(DaemonDatabaseException("Failed to run database query", others))
     }
 
-  private def createPoolRow(pool: PoolDto): PoolRow =
-    PoolRow(0, pool.name, pool.userId, new Timestamp(new Date().getTime), pool.configuration, pool.dbBackend, pool.dbConnectString)
-
-  private def createPool(poolRow: PoolRow): PoolDto =
-    PoolDto(poolRow.name, poolRow.userId, poolRow.configuration, Option(poolRow.id), poolRow.dbBackend, poolRow.dbConnectString)
-
-  private def createUserRow(user: UserDto): UserRow =
-    UserRow(0, user.pubKey, user.permissions)
-
-  private def createUser(userRow: UserRow): UserDto =
-    UserDto(userRow.pubKey, userRow.permissions, Option(userRow.id))
-
   private def insertDatabaseVersion(version: Int): DBIO[Int] =
     databaseVersions += (version, new Timestamp(new Date().getTime))
 
-  private def filterPool(poolName: String, userId: Long) = {
-    pools.filter(pool => pool.userId === userId.bind && pool.name === poolName.bind)
-  }
-
-  private def filterUser(pubKey: String) = {
-    users.filter(_.pubKey === pubKey.bind)
-  }
-
 }
 
-case class UserDto(pubKey: String, permissions: Int, id: Option[Long] = None) {
-  override def toString: String = s"UserDto(id: $id, pubKey: $pubKey, permissions: $permissions)"
-}
-case class PoolDto(name: String, userId: Long, configuration: String, id: Option[Long] = None, dbBackend: String = "", dbConnectString: String = "") {
-  override def toString: String = "PoolDto(" +
-    s"id: $id, " +
-    s"name: $name, " +
-    s"userId: $userId, " +
-    s"configuration: $configuration, " +
-    s"dbBackend: $dbBackend, " +
-    s"dbConnectString: $dbConnectString)"
-}
+case class PoolDto(name: String)
