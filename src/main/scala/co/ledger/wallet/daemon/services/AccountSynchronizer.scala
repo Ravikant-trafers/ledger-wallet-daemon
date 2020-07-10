@@ -311,6 +311,8 @@ class AccountSynchronizer(account: Account,
   // This method is called periodically by `periodicResyncStatusCheck` task
   private def periodicUpdateStatus() = this.synchronized {
     syncStatus match {
+      case Resyncing(targetHeight, currentHeight) if targetHeight == currentHeight =>
+        syncStatus = Synced(currentHeight)
       case Resyncing(target, _) =>
         val lastHeight = lastBlockHeightSync
         syncStatus = Resyncing(target, lastHeight)
