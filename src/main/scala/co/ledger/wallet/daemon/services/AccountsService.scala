@@ -3,7 +3,6 @@ package co.ledger.wallet.daemon.services
 import java.net.URL
 import java.util.{Date, UUID}
 
-import cats.data.OptionT
 import cats.instances.future._
 import cats.instances.list._
 import cats.instances.option._
@@ -22,18 +21,14 @@ import co.ledger.wallet.daemon.models.Operations.{OperationView, PackedOperation
 import co.ledger.wallet.daemon.models.Wallet._
 import co.ledger.wallet.daemon.models._
 import co.ledger.wallet.daemon.schedulers.observers.SynchronizationResult
-import co.ledger.wallet.daemon.utils.{NetUtils, Utils}
+import co.ledger.wallet.daemon.utils.Utils
 import co.ledger.wallet.daemon.utils.Utils.{RichBigInt, _}
 import com.google.common.cache.{CacheBuilder, CacheLoader}
-import com.twitter.finagle.http.{Method, Request, Response}
 import javax.inject.{Inject, Singleton}
-import org.web3j.abi.datatypes.{Address, Function, Type, Uint}
-import org.web3j.abi.{FunctionEncoder, TypeReference}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
-import scala.util.{Failure, Success, Try}
 
 @Singleton
 class AccountsService @Inject()(daemonCache: DaemonCache) extends DaemonService {
@@ -104,57 +99,27 @@ class AccountsService @Inject()(daemonCache: DaemonCache) extends DaemonService 
         lastBlockHeight <- wallet.lastBlockHeight
         count <- account.getUtxoCount()
         utxos <- account.getUtxo(offset, batch).map(_.map(output => {
-          UTXOView(output.getTransactionHash, output.getOutputIndex, output.getAddress, output.getBlockHeight, lastBlockHeight - output.getBlockHeight, output.getValue.toBigInt.asScala)
+          UTXOView(
+            output.getTransactionHash,
+            output.getOutputIndex,
+            output.getAddress,
+            output.getBlockHeight,
+            lastBlockHeight - output.getBlockHeight,
+            output.getValue.toBigInt.asScala)
         }))
       } yield (utxos, count)
     }
 
   private def loadBalance(contract: Option[String], accountInfo: AccountInfo): Future[BigInt] = {
 
-    def encodeBalanceFunction(address: String): Try[String] = {
-      info(s"Try to encode balance function with address: $address")
-      val function = new Function(
-        "balanceOf",
-        List[Type[_]](new Address(address.replaceFirst("0x", ""))).asJava,
-        List[TypeReference[_ <: Type[_]]](new TypeReference[Uint]() {}).asJava
-      )
-      Try(FunctionEncoder.encode(function))
-    }
-
     def runWithFallback(cb: Future[BigInt], url: URL, service: ScalaHttpClientPool, timeout: scala.concurrent.duration.Duration): Future[BigInt] = {
       Future(Await.result(cb, timeout)).recoverWith { case t =>
-        warn(s"Failed to get balance from libcore: $t")
-        info("Using fallback provider")
-        val result = for {
-          address <- OptionT(accountFreshAddresses(accountInfo).map(_.headOption.map(_.address)))
-          body <- OptionT.liftF(Future.fromTry(contract match {
-            case Some(contractAddress) =>
-              encodeBalanceFunction(address).map { data =>
-                s"""{"jsonrpc":"2.0","method":"eth_call","params":[{"to": "$contractAddress", "data": "$data"}, "latest"],"id":1}"""
-              }
-            case None => Success(s"""{"jsonrpc":"2.0","method":"eth_getBalance","params":["$address", "latest"],"id":1}""")
-          }))
-          response <- {
-            val request = Request(Method.Post, url.getPath).host(url.getHost)
-            request.setContentString(body)
-            request.setContentType("application/json")
-            val fut: Future[Response] = service.execute(NetUtils.urlToHost(url), request).asScala()
-            fut.onComplete {
-              case Success(v) => info(s"Successfully retrieve json response from provider : $v")
-              case Failure(t) => error("Unable to fetch from fallback provider", t)
-            }
-            OptionT.liftF(fut)
-          }
-          result <- OptionT.liftF(Future.fromTry(Try {
-            import io.circe.parser.parse
-            val json = parse(response.contentString)
-            val balance = json.flatMap { j =>
-              j.hcursor.get[String]("result")
-            }.map(_.replaceFirst("0x", "")).map(BigInt(_, 16))
-            balance.getOrElse(throw new Exception("Failed to parse fallback provider result"))
-          }))
-        } yield result
-        result.getOrElseF(Future.failed(FallbackBalanceProviderException(accountInfo.walletInfo.walletName, url.getHost, url.getPath)))
+        warn(s"Using fallback provider $url due to Failed to get balance from libcore: $t")
+        for {
+          address <- accountFreshAddresses(accountInfo).map(_.head.address)
+          balance <- FallbackService.getBalance(contract, address, service, url)
+            .getOrElseF(Future.failed(FallbackBalanceProviderException(accountInfo.walletInfo.walletName, url.getHost, url.getPath)))
+        } yield balance
       }
     }
 
