@@ -218,10 +218,9 @@ object DaemonConfiguration extends Logging {
       currency -> FeesPath(path)
     }.toMap
 
-    val ws = explorer.getObject("ws").unwrapped().asScala.toMap.mapValues(_.toString)
     ExplorerConfig(
       ApiConfig(fallbackTimeout, paths, proxyUseMap, fees),
-      ClientConnectionConfig(connectionPoolSize, retryBackoffDelta, connectionPoolTtl, retryTtl, retryMin, retryPercent), ws)
+      ClientConnectionConfig(connectionPoolSize, retryBackoffDelta, connectionPoolTtl, retryTtl, retryMin, retryPercent))
   }
 
 
@@ -249,7 +248,7 @@ object DaemonConfiguration extends Logging {
                                     retryMin: Int, // minimum retry per second
                                     retryPercent: Double)
 
-  case class ExplorerConfig(api: ApiConfig, client: ClientConnectionConfig, ws: Map[String, String])
+  case class ExplorerConfig(api: ApiConfig, client: ClientConnectionConfig)
 
   case class Proxy(host: String, port: Int)
 

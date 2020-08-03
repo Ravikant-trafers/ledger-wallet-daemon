@@ -43,10 +43,6 @@ object Wallet extends Logging {
       Wallet.addAccountIfNotExist(accountDerivations, w)
 
     def syncAccounts(poolName: String)(implicit ec: ExecutionContext): Future[Seq[SynchronizationResult]] = Wallet.syncAccounts(poolName, w)
-
-    def startCacheAndRealTimeObserver(implicit ec: ExecutionContext): Future[Unit] = Wallet.startCacheAndRealTimeObserver(w)
-
-    def stopRealTimeObserver(implicit ec: ExecutionContext): Future[Unit] = Wallet.stopRealTimeObserver(w)
   }
 
   def lastBlockHeight(w: core.Wallet)(implicit ec: ExecutionContext): Future[Long] = {
@@ -93,7 +89,6 @@ object Wallet extends Logging {
       count <- w.getAccountCount()
       accounts <- w.getAccounts(0, count)
     } yield accounts.asScala.map { a =>
-      a.startRealTimeObserver()
       a
     }.toList
   }
@@ -135,7 +130,6 @@ object Wallet extends Logging {
           a <- w.getAccount(accountIndex)
         } yield a
     }.map { coreA =>
-      startListenAccount(coreA)
       coreA
     }
   }
@@ -144,30 +138,6 @@ object Wallet extends Logging {
     accounts(w).flatMap { accounts =>
       Future.sequence(accounts.map { account => account.sync(poolName, w.getName) })
     }
-  }
-
-  def startCacheAndRealTimeObserver(w: core.Wallet)(implicit ec: ExecutionContext): Future[Unit] = startListenAccounts(w)
-
-  def stopRealTimeObserver(w: core.Wallet)(implicit ec: ExecutionContext): Future[Unit] = {
-    accounts(w).map { as =>
-      debug(LogMsgMaker.newInstance("Stop real time observer").append("wallet", w).append("account_count", as.size).toString())
-      as.foreach {
-        _.stopRealTimeObserver()
-      }
-    }
-  }
-
-  private def startListenAccounts(w: core.Wallet)(implicit ec: ExecutionContext): Future[Unit] = {
-    w.getAccountCount().flatMap { count =>
-      w.getAccounts(0, count).map { coreAs =>
-        coreAs.asScala.foreach { coreA => startListenAccount(coreA) }
-      }
-    }
-  }
-
-  private def startListenAccount(coreA: core.Account): core.Account = {
-    coreA.startRealTimeObserver()
-    coreA
   }
 
   private def getBalance(w: core.Wallet)(implicit ec: ExecutionContext): Future[BigInt] = {

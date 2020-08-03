@@ -150,15 +150,14 @@ object DefaultDaemonCache extends Logging {
       }
     }
 
-    private def clearCache(poolName: String): Future[Unit] = cachedPools.remove(poolName) match {
-      case Some(p) => p.clear
-      case None => Future.unit
+    private def clearCache(poolName: String): Future[Option[Pool]] = Future {
+      cachedPools.remove(poolName)
     }
 
     def addPoolIfNotExit(name: String, configuration: String): Future[Pool] = {
       val dto = PoolDto(name, id, configuration)
       dbDao.insertPool(dto).flatMap { poolId =>
-        toCacheAndStartListen(dto, poolId).map { pool =>
+        toCache(dto, poolId).map { pool =>
           info(LogMsgMaker.newInstance("Pool created").append("name", name).append("user_id", id).toString())
           pool
         }
@@ -180,19 +179,22 @@ object DefaultDaemonCache extends Logging {
       */
     def pool(name: String): Future[Option[Pool]] = {
       dbDao.getPool(id, name).flatMap {
-        case Some(p) => toCacheAndStartListen(p, p.id.get).map(Option(_))
+        case Some(p) => toCache(p, p.id.get).map(Option(_))
         case None => clearCache(name).map { _ => None }
       }
     }
 
-    private def toCacheAndStartListen(p: PoolDto, poolId: Long): Future[Pool] = {
+    private def toCache(p: PoolDto, poolId: Long): Future[Pool] = {
       cachedPools.get(p.name) match {
         case Some(pool) => Future.successful(pool)
         case None => Pool.newCoreInstance(p).flatMap { coreP =>
           cachedPools.put(p.name, Pool.newInstance(coreP, poolId))
           debug(s"Add ${cachedPools(p.name)} to $self cache")
-          cachedPools(p.name).registerEventReceiver(new NewOperationEventReceiver(poolId, opsCache))
-          cachedPools(p.name).startRealTimeObserver().map { _ => cachedPools(p.name) }
+          cachedPools.get(p.name).foreach(p => p.registerEventReceiver(new NewOperationEventReceiver(poolId, opsCache)))
+          cachedPools.get(p.name) match {
+            case None => Future.failed(new WalletPoolNotFoundException(p.name))
+            case Some(pool) => Future.successful(pool)
+          }
         }
       }
     }
@@ -206,7 +208,7 @@ object DefaultDaemonCache extends Logging {
       */
     def pools(): Future[Seq[Pool]] = for {
       poolDtos <- dbDao.getPools(id)
-      pools <- Future.sequence(poolDtos.map { pool => toCacheAndStartListen(pool, pool.id.get) })
+      pools <- Future.sequence(poolDtos.map { pool => toCache(pool, pool.id.get) })
     } yield pools
 
 

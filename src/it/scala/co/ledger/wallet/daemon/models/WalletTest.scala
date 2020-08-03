@@ -64,7 +64,6 @@ class WalletTest extends AssertionsForJUnit {
         )
       }.flatMap { info => testWallet.addAccountIfNotExist(info) }, Duration.Inf)
 
-    println("first lime in test")
     val accounts = Await.result(testWallet.accounts, Duration.Inf)
     assert(3 === accounts.size)
     assert(testAccount.getIndex === accounts.head.getIndex)
@@ -78,7 +77,6 @@ class WalletTest extends AssertionsForJUnit {
     assert(0 === testAccount.getIndex)
     assert(6 === account6.getIndex)
     assert(4 === account4.getIndex)
-    testPool.stopRealTimeObserver()
   }
 
   @Test def verifyWalletSupportNativeSegwit(): Unit = {
@@ -99,8 +97,6 @@ class WalletTest extends AssertionsForJUnit {
     assert(testWalletBitcoinNativeSegwit.getConfiguration.getString("KEYCHAIN_ENGINE") === "BIP173_P2WPKH")
     // Should failed for ethereum
     assert(testWalletInvalidCurrencyForNativeSegwit === Failure(UnsupportedNativeSegwitException("ethereum")))
-
-    testPool.stopRealTimeObserver()
   }
 
 }

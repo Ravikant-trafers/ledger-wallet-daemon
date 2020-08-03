@@ -81,12 +81,6 @@ class Pool(private val coreP: core.WalletPool, val id: Long) extends Logging {
     }
   }
 
-  private def startListen(wallet: core.Wallet): Future[core.Wallet] = {
-    for {
-      _ <- wallet.startCacheAndRealTimeObserver
-    } yield wallet
-  }
-
   /**
     * Obtain wallet by name. If the name doesn't exist in local cache, a core retrieval will be performed.
     *
@@ -119,24 +113,13 @@ class Pool(private val coreP: core.WalletPool, val id: Long) extends Logging {
     coreP.getCurrencies().map(_.asScala.toList)
   }
 
-  /**
-    * Clear the event receivers on this pool and underlying wallets. It will also call `stopRealTimeObserver` method.
-    *
-    * @return a future of Unit.
-    */
-  def clear: Future[Unit] = {
-    Future.successful(stopRealTimeObserver()).map { _ =>
-      unregisterEventReceivers()
-    }
-  }
-
   def addWalletIfNotExist(walletName: String, currencyName: String, isNativeSegwit: Boolean): Future[core.Wallet] = {
     coreP.getCurrency(currencyName).flatMap { coreC =>
       buildWalletConfig(coreC, isNativeSegwit) match {
         case Success(walletConfig) =>
           coreP.createWallet(walletName, coreC, walletConfig).flatMap { coreW =>
             info(LogMsgMaker.newInstance("Wallet created").append("name", walletName).append("pool_name", name).append("currency_name", currencyName).toString())
-            startListen(coreW)
+            Future.successful(coreW)
           }.recoverWith {
             case _: WalletAlreadyExistsException =>
               warn(LogMsgMaker.newInstance("Wallet already exist")
@@ -144,7 +127,7 @@ class Pool(private val coreP: core.WalletPool, val id: Long) extends Logging {
                 .append("pool_name", name)
                 .append("currency_name", currencyName)
                 .toString())
-              coreP.getWallet(walletName).flatMap { coreW => startListen(coreW) }
+              coreP.getWallet(walletName).flatMap { coreW => Future.successful(coreW) }
           }
 
         case Failure(e) => Future.failed(e)
@@ -165,7 +148,6 @@ class Pool(private val coreP: core.WalletPool, val id: Long) extends Logging {
           .append("pool_name", name)
           .append("wallet_name", wallet.getName)
           .append("api_endpoint", walletConfig.getString("BLOCKCHAIN_EXPLORER_API_ENDPOINT"))
-          .append("ws_endpoint", walletConfig.getString("BLOCKCHAIN_OBSERVER_WS_ENDPOINT"))
           .toString())
         coreP.updateWalletConfig(wallet.getName, walletConfig).flatMap { result =>
           info(LogMsgMaker.newInstance("Wallet update result")
@@ -223,33 +205,6 @@ class Pool(private val coreP: core.WalletPool, val id: Long) extends Logging {
     } yield result
   }
 
-  /**
-    * Start real time observer of this pool will start the observers of the underlying wallets and accounts.
-    *
-    * @return a future of Unit.
-    */
-  def startRealTimeObserver(): Future[Unit] = {
-    coreP.getWalletCount().map { count =>
-      coreP.getWallets(0, count).map { coreWs =>
-        coreWs.asScala.map { coreW => startListen(coreW) }
-      }
-    }
-  }
-
-  /**
-    * Stop real time observer of this pool will stop the observers of the underlying wallets and accounts.
-    *
-    * @return a Unit.
-    */
-  def stopRealTimeObserver(): Unit = {
-    debug(LogMsgMaker.newInstance("Stop real time observer").append("pool", name).toString())
-    coreP.getWalletCount().map { count =>
-      coreP.getWallets(0, count).map { coreWs =>
-        coreWs.asScala.foreach { coreW => coreW.stopRealTimeObserver }
-      }
-    }
-  }
-
   override def equals(that: Any): Boolean = {
     that match {
       case that: Pool => that.isInstanceOf[Pool] && self.hashCode == that.hashCode
@@ -290,8 +245,6 @@ class Pool(private val coreP: core.WalletPool, val id: Long) extends Logging {
         walletConfig.putString("BLOCKCHAIN_EXPLORER_API_ENDPOINT", s"${apiUrl.getProtocol}://${apiUrl.getHost}:${apiUrl.getPort}")
       }
 
-      val wsUrl = DaemonConfiguration.explorer.ws.getOrElse(currencyName, DaemonConfiguration.explorer.ws("default"))
-      walletConfig.putString("BLOCKCHAIN_OBSERVER_WS_ENDPOINT", wsUrl)
       val disableSyncToken: Boolean = DaemonConfiguration.explorer.api.paths.get(currencyName).exists(_.disableSyncToken)
       walletConfig.putBoolean("DEACTIVATE_SYNC_TOKEN", disableSyncToken)
       walletConfig.putInt("RIPPLE_LAST_LEDGER_SEQUENCE_OFFSET", DaemonConfiguration.rippleLastLedgerSequenceOffset)

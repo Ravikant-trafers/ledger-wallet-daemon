@@ -11,18 +11,15 @@ import co.ledger.core._
 import co.ledger.core.implicits.{InvalidEIP55FormatException, NotEnoughFundsException, UnsupportedOperationException, _}
 import co.ledger.wallet.daemon.clients.ApiClient.XlmFeeInfo
 import co.ledger.wallet.daemon.clients.ClientFactory
-import co.ledger.wallet.daemon.configurations.DaemonConfiguration
 import co.ledger.wallet.daemon.controllers.TransactionsController._
-import co.ledger.wallet.daemon.exceptions.{AmountNotEnoughToActivateAccount, ERC20BalanceNotEnough, ERC20NotFoundException, InvalidEIP55Format, SignatureSizeUnmatchException}
+import co.ledger.wallet.daemon.exceptions._
 import co.ledger.wallet.daemon.libledger_core.async.LedgerCoreExecutionContext
 import co.ledger.wallet.daemon.models.Currency._
 import co.ledger.wallet.daemon.models.coins.Coin.TransactionView
 import co.ledger.wallet.daemon.models.coins._
 import co.ledger.wallet.daemon.schedulers.observers.{SynchronizationEventReceiver, SynchronizationResult}
-import co.ledger.wallet.daemon.services.LogMsgMaker
 import co.ledger.wallet.daemon.utils.HexUtils
-import co.ledger.wallet.daemon.utils.Utils.RichBigInt
-import co.ledger.wallet.daemon.utils.Utils.RichCoreBigInt
+import co.ledger.wallet.daemon.utils.Utils.{RichBigInt, RichCoreBigInt}
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.google.common.primitives.UnsignedInteger
 import com.twitter.inject.Logging
@@ -113,12 +110,6 @@ object Account extends Logging {
 
     def sync(poolName: String, walletName: String)(implicit ec: ExecutionContext): Future[SynchronizationResult] =
       Account.sync(poolName, walletName, a)
-
-    def startRealTimeObserver(): Unit =
-      Account.startRealTimeObserver(a)
-
-    def stopRealTimeObserver(): Unit =
-      Account.stopRealTimeObserver(a)
   }
 
   def balance(a: core.Account)(implicit ex: ExecutionContext): Future[scala.BigInt] = a.getBalance().map { b =>
@@ -500,20 +491,6 @@ object Account extends Logging {
     val f = promise.future
     f onComplete (_ => a.getEventBus.unsubscribe(receiver))
     f
-  }
-
-  def startRealTimeObserver(a: core.Account): Unit = {
-    if (DaemonConfiguration.realTimeObserverOn && !a.isInstanceOfStellarLikeAccount && !a.isObservingBlockchain) {
-      a.startBlockchainObservation()
-      debug(LogMsgMaker.newInstance(s"Set real time observer on ${a.isObservingBlockchain}").append("account", a).toString())
-    }
-  }
-
-  def stopRealTimeObserver(a: core.Account): Unit = {
-    if (!a.isInstanceOfStellarLikeAccount && a.isObservingBlockchain) {
-      debug(LogMsgMaker.newInstance("Stop real time observer").append("account", a).toString())
-      a.stopBlockchainObservation()
-    }
   }
 
   class Derivation(private val accountCreationInfo: core.AccountCreationInfo) {
