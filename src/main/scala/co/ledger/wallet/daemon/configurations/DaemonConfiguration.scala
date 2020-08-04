@@ -92,7 +92,7 @@ object DaemonConfiguration extends Logging {
   }
 
   val isWhiteListDisabled: Boolean = if (!config.hasPath("disable_whitelist")) false else config.getBoolean("disable_whitelist")
-  
+
   object Synchronization {
     val syncInterval = if (config.hasPath("synchronization.sync_interval_in_seconds")) {
       config.getInt("synchronization.sync_interval_in_seconds")
