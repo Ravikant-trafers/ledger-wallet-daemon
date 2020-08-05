@@ -8,7 +8,7 @@ import co.ledger.core.{ConfigurationDefaults, ErrorCode}
 import co.ledger.wallet.daemon.async.MDCPropagatingExecutionContext.Implicits.global
 import co.ledger.wallet.daemon.clients.ClientFactory
 import co.ledger.wallet.daemon.configurations.DaemonConfiguration
-import co.ledger.wallet.daemon.database.PoolDto
+import co.ledger.wallet.daemon.database.{PoolDto, PostgresPreferenceBackend}
 import co.ledger.wallet.daemon.exceptions.{CoreDatabaseException, CurrencyNotFoundException, UnsupportedNativeSegwitException, WalletNotFoundException}
 import co.ledger.wallet.daemon.libledger_core.async.LedgerCoreExecutionContext
 import co.ledger.wallet.daemon.libledger_core.crypto.SecureRandomRNG
@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.twitter.inject.Logging
 import com.typesafe.config.ConfigFactory
 import org.bitcoinj.core.Sha256Hash
+import slick.jdbc.JdbcBackend.Database
 
 import scala.collection.JavaConverters._
 import scala.collection._
@@ -267,8 +268,9 @@ object Pool extends Logging {
   }
 
   def newCoreInstance(poolDto: PoolDto): Future[core.WalletPool] = {
+    val builder = core.WalletPoolBuilder.createInstance()
     val poolConfig = core.DynamicObject.newInstance()
-    val dbBackend = Try(config.getString("core_database_engine")).toOption.getOrElse("sqlite3") match {
+    Try(config.getString("core_database_engine")).toOption.getOrElse("sqlite3") match {
       case "postgres" =>
         info("Using PostgreSql as core database engine")
         val dbName = for {
@@ -287,24 +289,27 @@ object Pool extends Logging {
         }
         dbName match {
           case Success(value) =>
+            info("Using PostgreSQL as core preference database")
+            val preferenceBackend = new PostgresPreferenceBackend(Database.forURL(value))
+            builder.setExternalPreferencesBackend(preferenceBackend)
+            builder.setInternalPreferencesBackend(preferenceBackend)
             poolConfig.putString("DATABASE_NAME", value)
-            core.DatabaseBackend.getPostgreSQLBackend(config.getInt("postgres.pool_size"))
+            val backend = core.DatabaseBackend.getPostgreSQLBackend(config.getInt("postgres.pool_size"))
+            builder.setDatabaseBackend(backend)
           case Failure(exception) =>
             throw CoreDatabaseException("Failed to configure wallet daemon's core database", exception)
         }
       case _ =>
         info("Using Sqlite as core database engine")
-        core.DatabaseBackend.getSqlite3Backend
+        builder.setDatabaseBackend(core.DatabaseBackend.getSqlite3Backend)
     }
-
-    core.WalletPoolBuilder.createInstance()
+    builder
       .setHttpClient(ClientFactory.httpCoreClient)
       .setWebsocketClient(ClientFactory.webSocketClient)
       .setLogPrinter(new NoOpLogPrinter(ClientFactory.threadDispatcher.getMainExecutionContext, true))
       .setThreadDispatcher(ClientFactory.threadDispatcher)
       .setPathResolver(new ScalaPathResolver(corePoolId(poolDto.userId, poolDto.name)))
       .setRandomNumberGenerator(new SecureRandomRNG)
-      .setDatabaseBackend(dbBackend)
       .setConfiguration(poolConfig)
       .setName(poolDto.name)
       .build()
