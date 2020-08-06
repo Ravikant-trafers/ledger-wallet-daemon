@@ -7,14 +7,25 @@ import javax.inject.Inject
 import slick.jdbc.JdbcBackend.Database
 import co.ledger.wallet.daemon.async.MDCPropagatingExecutionContext.Implicits.global
 import com.twitter.inject.Logging
+import slick.jdbc.PostgresProfile
 
 import scala.collection.JavaConverters._
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
 class PostgresPreferenceBackend @Inject() (db: Database) extends PreferencesBackend with Logging {
-  import Tables._
-  import Tables.profile.api._
+  val postgresTables = new Tables {
+    override val profile = PostgresProfile
+  }
+  import postgresTables._
+  import postgresTables.profile.api._
+
+  def init(): Unit = {
+    val f = db.run {
+      preferences.schema.createIfNotExists
+    }
+    Await.result(f, 10.seconds)
+  }
 
   override def get(bytes: Array[Byte]): Array[Byte] = {
     val f = db.run(

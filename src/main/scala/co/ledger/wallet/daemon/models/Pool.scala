@@ -282,18 +282,21 @@ object Pool extends Logging {
         } yield {
           // Ref: postgres://USERNAME:PASSWORD@HOST:PORT/DBNAME
           if (dbPwd.isEmpty) {
-            s"postgres://${dbUserName}@${dbHost}:${dbPort}/${dbPrefix}${poolDto.name}"
+            (s"postgres://${dbUserName}@${dbHost}:${dbPort}/${dbPrefix}${poolDto.name}",
+              s"jdbc:postgresql://$dbHost:$dbPort/$dbPrefix${poolDto.name}?user=$dbUserName")
           } else {
-            s"postgres://${dbUserName}:${dbPwd}@${dbHost}:${dbPort}/${dbPrefix}${poolDto.name}"
+            (s"postgres://${dbUserName}:${dbPwd}@${dbHost}:${dbPort}/${dbPrefix}${poolDto.name}",
+            s"jdbc:postgresql://$dbHost:$dbPort/$dbPrefix${poolDto.name}?user=$dbUserName&password=$dbPwd")
           }
         }
         dbName match {
-          case Success(value) =>
+          case Success((cppUrl, jdbcUrl)) =>
             info("Using PostgreSQL as core preference database")
-            val preferenceBackend = new PostgresPreferenceBackend(Database.forURL(value))
+            val preferenceBackend = new PostgresPreferenceBackend(Database.forURL(jdbcUrl))
+            preferenceBackend.init()
             builder.setExternalPreferencesBackend(preferenceBackend)
             builder.setInternalPreferencesBackend(preferenceBackend)
-            poolConfig.putString("DATABASE_NAME", value)
+            poolConfig.putString("DATABASE_NAME", cppUrl)
             val backend = core.DatabaseBackend.getPostgreSQLBackend(config.getInt("postgres.pool_size"))
             builder.setDatabaseBackend(backend)
           case Failure(exception) =>
