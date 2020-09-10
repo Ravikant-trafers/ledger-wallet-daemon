@@ -85,13 +85,9 @@ class AccountsService @Inject()(daemonCache: DaemonCache) extends DaemonService 
   def synchronizeAccount(accountInfo: AccountInfo): Future[Seq[SynchronizationResult]] =
     daemonCache.withAccount(accountInfo)(_.sync(accountInfo.poolName, accountInfo.walletName).map(Seq(_)))
 
-  def getAccount(accountInfo: AccountInfo): Future[Option[core.Account]] = {
-    daemonCache.getAccount(accountInfo: AccountInfo)
-  }
+  def getAccount(accountInfo: AccountInfo): Future[Option[core.Account]] = daemonCache.getAccount(accountInfo: AccountInfo)
 
-  def getBalance(contract: Option[String], accountInfo: AccountInfo): Future[BigInt] =
-    balanceCache.get(CacheKey(accountInfo, contract))
-
+  def getBalance(contract: Option[String], accountInfo: AccountInfo): Future[BigInt] = balanceCache.get(CacheKey(accountInfo, contract))
 
   def getUtxo(accountInfo: AccountInfo, offset: Int, batch: Int): Future[(List[UTXOView], Int)] =
     daemonCache.withAccountAndWallet(accountInfo) { (account, wallet) =>
@@ -99,12 +95,14 @@ class AccountsService @Inject()(daemonCache: DaemonCache) extends DaemonService 
         lastBlockHeight <- wallet.lastBlockHeight
         count <- account.getUtxoCount()
         utxos <- account.getUtxo(offset, batch).map(_.map(output => {
+          val confirmations: Long =
+            if (output.getBlockHeight >= 0) lastBlockHeight - output.getBlockHeight else output.getBlockHeight
           UTXOView(
             output.getTransactionHash,
             output.getOutputIndex,
             output.getAddress,
             output.getBlockHeight,
-            lastBlockHeight - output.getBlockHeight,
+            confirmations,
             output.getValue.toBigInt.asScala)
         }))
       } yield (utxos, count)
