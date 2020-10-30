@@ -14,6 +14,15 @@ ENV HTTP_PORT 9200
 ENV ADMIN_PORT 0
 ENV STAGE dev
 
+## Datadog environment
+ENV DD_SERVICE=wallet-daemon
+ENV DD_VERSION=2.9.0-rc4
+ENV DD_LOGS_INJECTION=true
+ENV DD_AGENT_HOST=172.17.0.1
+ENV DD_PROFILING_ENABLED=true
+ENV DD_TRACE_DEBUG=false
+
+
 WORKDIR /app
 COPY --from=builder /build/target/universal/stage .
 COPY ./docker/install_run_deps.sh .
