@@ -1,7 +1,5 @@
 package co.ledger.wallet.daemon.models
 
-import java.util.{Calendar, Date}
-
 import cats.implicits._
 import co.ledger.core
 import co.ledger.core._
@@ -24,7 +22,6 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.google.common.primitives.UnsignedInteger
 import com.twitter.inject.Logging
 
-import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 
@@ -36,7 +33,7 @@ object Account extends Logging {
     }
 
     def erc20Balances(contracts: Option[Array[String]])(implicit ex: ExecutionContext): Future[Seq[scala.BigInt]] = {
-      val contractList = (contracts.getOrElse(a.asEthereumLikeAccount().getERC20Accounts.asScala.toArray.map(ercAccount => ercAccount.getToken.getContractAddress)))
+      val contractList = contracts.getOrElse(a.asEthereumLikeAccount().getERC20Accounts.asScala.toArray.map(ercAccount => ercAccount.getToken.getContractAddress))
       a.asEthereumLikeAccount().getERC20Balances(contractList).map(_.asScala.map(coreBi => coreBi.asScala))
     }
 
@@ -62,7 +59,7 @@ object Account extends Logging {
       Account.getUtxo(offset, batch, a)
     }
 
-    def getUtxoCount(): Future[Int] = {
+    def getUtxoCount: Future[Int] = {
       Account.getUtxoCount(a)
     }
 
@@ -486,15 +483,8 @@ object Account extends Logging {
       }.flatten
   }
 
-  def operations(offset: Int, batch: Int, fullOp: Int, query: OperationQuery)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] = {
-    (if (fullOp > 0) {
-      query.addOrder(OperationOrderKey.DATE, true).offset(offset).limit(batch).complete().execute()
-    } else {
-      query.addOrder(OperationOrderKey.DATE, true).offset(offset).limit(batch).partial().execute()
-    }).map { operations => operations.asScala.toList }
-  }
-
-  def operationViews(offset: Int, batch: Int, fullOp: Int, query: OperationQuery, wallet: Wallet, a: Account)(implicit ec: ExecutionContext): Future[Seq[OperationView]] = {
+  def operationViews(offset: Int, batch: Int, fullOp: Int, query: OperationQuery, wallet: Wallet, a: Account)
+                    (implicit ec: ExecutionContext): Future[Seq[OperationView]] = {
     (if (fullOp > 0) {
       query.addOrder(OperationOrderKey.DATE, true).offset(offset).limit(batch).complete().execute()
     } else {
@@ -504,38 +494,18 @@ object Account extends Logging {
     }.flatten
   }
 
-  def latestOperationViews(latests: Int, query: OperationQuery, w: Wallet, a: Account)(implicit ec: ExecutionContext): Future[Seq[OperationView]] = {
+  def latestOperationViews(latests: Int, query: OperationQuery, w: Wallet, a: Account)
+                          (implicit ec: ExecutionContext): Future[Seq[OperationView]] = {
     query.addOrder(OperationOrderKey.DATE, true).offset(0).limit(latests).complete().execute()
       .map { operations =>
         Future.sequence(operations.asScala.toList.map(Operations.getView(_, w, a)))
       }.flatten
   }
 
-  def balances(start: String, end: String, timePeriod: core.TimePeriod, a: core.Account)(implicit ec: ExecutionContext): Future[List[scala.BigInt]] = {
+  def balances(start: String, end: String, timePeriod: core.TimePeriod, a: core.Account)
+              (implicit ec: ExecutionContext): Future[List[scala.BigInt]] = {
     a.getBalanceHistory(start, end, timePeriod).map { balances =>
       balances.asScala.toList.map { ba => ba.toBigInt.asScala }
-    }
-  }
-
-  @tailrec
-  private def filter(start: Date, i: Int, end: Date, timePeriod: Int, operations: List[core.Operation], preResult: List[Map[core.OperationType, Int]]): List[Map[core.OperationType, Int]] = {
-    def searchResult(condition: core.Operation => Boolean): Map[core.OperationType, Int] =
-      operations.filter(condition).groupBy(op => op.getOperationType).map { case (optType, opts) => (optType, opts.size) }
-
-    val (begin, next) = {
-      val calendar = Calendar.getInstance()
-      calendar.setTime(start)
-      calendar.add(timePeriod, i - 1)
-      val begin = calendar.getTime
-      calendar.add(timePeriod, 1)
-      (begin, calendar.getTime)
-    }
-    if (end.after(next)) {
-      val result = searchResult(op => op.getDate.compareTo(begin) >= 0 && op.getDate.compareTo(next) < 0)
-      filter(start, i + 1, end, timePeriod, operations, preResult ::: List(result))
-    } else {
-      val result = searchResult(op => op.getDate.compareTo(begin) >= 0 && op.getDate.compareTo(end) <= 0)
-      preResult ::: List(result)
     }
   }
 
