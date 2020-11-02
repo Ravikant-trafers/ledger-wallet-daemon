@@ -103,12 +103,12 @@ object Account extends Logging {
       Account.createTransaction(transactionInfo, a, w)
 
     def operationView(uid: String, fullOp: Int, w: Wallet)(implicit ec: ExecutionContext): Future[Option[OperationView]] = Account.operationView(uid, fullOp, w, a)
-    
+
     def operationViews(offset: Int, batch: Int, fullOp: Int, w: Wallet)(implicit ec: ExecutionContext): Future[Seq[OperationView]] =
       Account.operationViews(offset, batch, fullOp, a.queryOperations(), w, a)
 
-    def latestOperations(latests: Int)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] =
-      Account.latestOperations(latests, a.queryOperations())
+    def latestOperationViews(latests: Int, w: Wallet)(implicit ec: ExecutionContext): Future[Seq[OperationView]] =
+      Account.latestOperationViews(latests, a.queryOperations(), w, a)
 
     def operationViewsFromHeight(offset: Int, batch: Int, fullOp: Int, fromHeight: Long, w: Wallet)(implicit ec: ExecutionContext): Future[Seq[OperationView]] = {
       val opQuery: OperationQuery = a.queryOperations()
@@ -511,8 +511,11 @@ object Account extends Logging {
     }.flatten
   }
 
-  def latestOperations(latests: Int, query: OperationQuery)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] = {
-    query.addOrder(OperationOrderKey.DATE, true).offset(0).limit(latests).complete().execute().map { operations => operations.asScala.toList }
+  def latestOperationViews(latests: Int, query: OperationQuery, w: Wallet, a: Account)(implicit ec: ExecutionContext): Future[Seq[OperationView]] = {
+    query.addOrder(OperationOrderKey.DATE, true).offset(0).limit(latests).complete().execute()
+      .map { operations =>
+        Future.sequence(operations.asScala.toList.map(Operations.getView(_, w, a)))
+      }.flatten
   }
 
   def balances(start: String, end: String, timePeriod: core.TimePeriod, a: core.Account)(implicit ec: ExecutionContext): Future[List[scala.BigInt]] = {
