@@ -55,8 +55,8 @@ object Account extends Logging {
     def erc20Account(tokenAddress: String): Either[Exception, core.ERC20LikeAccount] =
       asERC20Account(tokenAddress, a)
 
-    def getUtxo(offset: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[co.ledger.core.BitcoinLikeOutput]] = {
-      Account.getUtxo(offset, batch, a)
+    def getUtxo(referenceHeight: Long, offset: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[UTXOView]] = {
+      Account.getUtxo(referenceHeight, offset, batch, a)
     }
 
     def getUtxoCount: Future[Int] = {
@@ -144,8 +144,8 @@ object Account extends Logging {
     })
   }
 
-  def getUtxo(offset: Int, batch: Int, a: core.Account)(implicit ex: ExecutionContext): Future[List[co.ledger.core.BitcoinLikeOutput]] = {
-    a.asBitcoinLikeAccount().getUTXO(offset, offset + batch).map(_.asScala.toList)
+  def getUtxo(referenceHeight: Long, offset: Int, batch: Int, a: core.Account)(implicit ex: ExecutionContext): Future[List[UTXOView]] = {
+    a.asBitcoinLikeAccount().getUTXO(offset, offset + batch).map(_.asScala.toList.map(UTXOView.fromBitcoinOutput(_, referenceHeight)))
   }
 
   def getUtxoCount(a: core.Account): Future[Int] = {
@@ -690,3 +690,16 @@ case class UTXOView(
                      @JsonProperty("confirmations") confirmations: Long,
                      @JsonProperty("amount") amount: scala.BigInt
                    )
+object UTXOView {
+  def fromBitcoinOutput(output: BitcoinLikeOutput, referenceBlockHeight: Long): UTXOView = {
+    val confirmations: Long =
+      if (output.getBlockHeight >= 0) referenceBlockHeight - output.getBlockHeight else output.getBlockHeight
+    UTXOView(
+      output.getTransactionHash,
+      output.getOutputIndex,
+      output.getAddress,
+      output.getBlockHeight,
+      confirmations,
+      output.getValue.toBigInt.asScala)
+  }
+}

@@ -100,17 +100,7 @@ class AccountsService @Inject()(daemonCache: DaemonCache, synchronizerManager: A
       for {
         lastBlockHeight <- wallet.lastBlockHeight
         count <- account.getUtxoCount
-        utxos <- account.getUtxo(offset, batch).map(_.map(output => {
-          val confirmations: Long =
-            if (output.getBlockHeight >= 0) lastBlockHeight - output.getBlockHeight else output.getBlockHeight
-          UTXOView(
-            output.getTransactionHash,
-            output.getOutputIndex,
-            output.getAddress,
-            output.getBlockHeight,
-            confirmations,
-            output.getValue.toBigInt.asScala)
-        }))
+        utxos <- account.getUtxo(lastBlockHeight, offset, batch)
       } yield (utxos, count)
     }
   }
@@ -318,7 +308,6 @@ class AccountsService @Inject()(daemonCache: DaemonCache, synchronizerManager: A
       case _ =>
     }
   }
-
 }
 
 case class OperationQueryParams(previous: Option[UUID], next: Option[UUID], batch: Int, fullOp: Int)
