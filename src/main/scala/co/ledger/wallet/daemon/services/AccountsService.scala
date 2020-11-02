@@ -268,10 +268,7 @@ class AccountsService @Inject()(daemonCache: DaemonCache, synchronizerManager: A
     daemonCache.withAccountAndWallet(accountInfo) {
       case (account, wallet) =>
         checkSyncStatus(accountInfo)
-        account.firstOperation flatMap {
-          case None => Future.successful(None)
-          case Some(o) => Operations.getView(o, wallet, account).map(Some(_))
-        }
+        account.firstOperationView(wallet)
     }
   }
 

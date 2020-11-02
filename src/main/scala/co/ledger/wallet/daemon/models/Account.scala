@@ -72,8 +72,8 @@ object Account extends Logging {
     def balances(start: String, end: String, timePeriod: core.TimePeriod)(implicit ec: ExecutionContext): Future[List[scala.BigInt]] =
       Account.balances(start, end, timePeriod, a)
 
-    def firstOperation(implicit ec: ExecutionContext): Future[Option[core.Operation]] =
-      Account.firstOperation(a)
+    def firstOperationView(w: Wallet)(implicit ec: ExecutionContext): Future[Option[OperationView]] =
+      Account.firstOperationView(w, a)
 
     def operationCounts(implicit ec: ExecutionContext): Future[Map[core.OperationType, Int]] =
       Account.operationCounts(a)
@@ -468,16 +468,6 @@ object Account extends Logging {
     }
   }
 
-  def operation(uid: String, fullOp: Int, a: core.Account)(implicit ec: ExecutionContext): Future[Option[core.Operation]] = {
-    val q = a.queryOperations()
-    q.filter().opAnd(core.QueryFilter.operationUidEq(uid))
-    (if (fullOp > 0) q.complete().execute()
-    else q.partial().execute()).map { ops =>
-      debug(s"Found ${ops.size()} operation(s) with uid : $uid")
-      ops.asScala.headOption
-    }
-  }
-
   def operationView(uid: String, fullOp: Int, w: Wallet, a: core.Account)(implicit ec: ExecutionContext): Future[Option[OperationView]] = {
     val q = a.queryOperations()
     q.filter().opAnd(core.QueryFilter.operationUidEq(uid))
@@ -488,9 +478,12 @@ object Account extends Logging {
     }
   }
 
-  def firstOperation(a: core.Account)(implicit ec: ExecutionContext): Future[Option[core.Operation]] = {
+  def firstOperationView(w: Wallet, a: core.Account)(implicit ec: ExecutionContext): Future[Option[OperationView]] = {
     a.queryOperations().addOrder(OperationOrderKey.DATE, false).limit(1).partial().execute()
-      .map { ops => ops.asScala.toList.headOption }
+      .map { ops =>
+        ops.asScala.toList.headOption
+          .map(op => Operations.getView(op, w, a)).sequence
+      }.flatten
   }
 
   def operations(offset: Int, batch: Int, fullOp: Int, query: OperationQuery)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] = {
