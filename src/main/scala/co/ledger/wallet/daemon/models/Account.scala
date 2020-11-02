@@ -110,10 +110,10 @@ object Account extends Logging {
     def latestOperations(latests: Int)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] =
       Account.latestOperations(latests, a.queryOperations())
 
-    def operationsFromHeight(offset: Int, batch: Int, fullOp: Int, fromHeight: Long)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] = {
+    def operationViewsFromHeight(offset: Int, batch: Int, fullOp: Int, fromHeight: Long, w: Wallet)(implicit ec: ExecutionContext): Future[Seq[OperationView]] = {
       val opQuery: OperationQuery = a.queryOperations()
       opQuery.filter().opAnd(QueryFilter.blockHeightGt(fromHeight))
-      Account.operations(offset, batch, fullOp, opQuery)
+      Account.operationViews(offset, batch, fullOp, opQuery, w, a)
     }
 
     def freshAddresses(implicit ec: ExecutionContext): Future[Seq[core.Address]] =
@@ -499,6 +499,16 @@ object Account extends Logging {
     } else {
       query.addOrder(OperationOrderKey.DATE, true).offset(offset).limit(batch).partial().execute()
     }).map { operations => operations.asScala.toList }
+  }
+
+  def operationViews(offset: Int, batch: Int, fullOp: Int, query: OperationQuery, wallet: Wallet, a: Account)(implicit ec: ExecutionContext): Future[Seq[OperationView]] = {
+    (if (fullOp > 0) {
+      query.addOrder(OperationOrderKey.DATE, true).offset(offset).limit(batch).complete().execute()
+    } else {
+      query.addOrder(OperationOrderKey.DATE, true).offset(offset).limit(batch).partial().execute()
+    }).map { operations =>
+      Future.sequence(operations.asScala.toList.map(op => Operations.getView(op, wallet, a)))
+    }.flatten
   }
 
   def latestOperations(latests: Int, query: OperationQuery)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] = {
