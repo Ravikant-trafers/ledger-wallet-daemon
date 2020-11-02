@@ -103,9 +103,9 @@ object Account extends Logging {
       Account.createTransaction(transactionInfo, a, w)
 
     def operationView(uid: String, fullOp: Int, w: Wallet)(implicit ec: ExecutionContext): Future[Option[OperationView]] = Account.operationView(uid, fullOp, w, a)
-
-    def operations(offset: Int, batch: Int, fullOp: Int)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] =
-      Account.operations(offset, batch, fullOp, a.queryOperations())
+    
+    def operationViews(offset: Int, batch: Int, fullOp: Int, w: Wallet)(implicit ec: ExecutionContext): Future[Seq[OperationView]] =
+      Account.operationViews(offset, batch, fullOp, a.queryOperations(), w, a)
 
     def latestOperations(latests: Int)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] =
       Account.latestOperations(latests, a.queryOperations())
