@@ -288,13 +288,7 @@ class AccountsService @Inject()(daemonCache: DaemonCache, synchronizerManager: A
     daemonCache.withAccountAndWallet(accountInfo) {
       case (account, wallet) =>
         checkSyncStatus(accountInfo)
-        for {
-          operationOpt <- account.operation(uid, fullOp)
-          op <- operationOpt match {
-            case None => Future.successful(None)
-            case Some(op) => Operations.getView(op, wallet, account).map(Some(_))
-          }
-        } yield op
+        account.operationView(uid, fullOp, wallet)
     }
 
   def createAccount(accountCreationBody: AccountDerivationView, walletInfo: WalletInfo): Future[AccountView] =
