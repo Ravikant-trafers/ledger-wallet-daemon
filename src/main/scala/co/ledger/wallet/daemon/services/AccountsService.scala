@@ -99,7 +99,7 @@ class AccountsService @Inject()(daemonCache: DaemonCache, synchronizerManager: A
     daemonCache.withAccountAndWallet(accountInfo) { (account, wallet) =>
       for {
         lastBlockHeight <- wallet.lastBlockHeight
-        count <- account.getUtxoCount()
+        count <- account.getUtxoCount
         utxos <- account.getUtxo(offset, batch).map(_.map(output => {
           val confirmations: Long =
             if (output.getBlockHeight >= 0) lastBlockHeight - output.getBlockHeight else output.getBlockHeight
@@ -158,12 +158,7 @@ class AccountsService @Inject()(daemonCache: DaemonCache, synchronizerManager: A
   def getERC20Operations(accountInfo: AccountInfo): Future[List[OperationView]] = {
     checkSyncStatus(accountInfo)
     daemonCache.withAccountAndWallet(accountInfo) {
-      case (account, wallet) =>
-        account.erc20Operations.flatMap { operations =>
-          operations.traverse { case (coreOp, erc20Op) =>
-            Operations.getErc20View(erc20Op, coreOp, wallet, account)
-          }
-        }
+      case (account, wallet) => account.erc20Operations(wallet)
     }
   }
 
@@ -171,13 +166,10 @@ class AccountsService @Inject()(daemonCache: DaemonCache, synchronizerManager: A
     checkSyncStatus(tokenAccountInfo.accountInfo)
     daemonCache.withAccountAndWallet(tokenAccountInfo.accountInfo) {
       case (account, wallet) =>
-        account.batchedErc20Operations(tokenAccountInfo.tokenAddress, offset, batch).flatMap { operations =>
-          operations.traverse { case (coreOp, erc20Op) =>
-            Operations.getErc20View(erc20Op, coreOp, wallet, account)
-          }
-        }.recoverWith({
-          case _: ERC20NotFoundException => Future.successful(List.empty)
-        })
+        account.batchedErc20Operations(wallet, tokenAccountInfo.tokenAddress, offset, batch)
+          .recoverWith({
+            case _: ERC20NotFoundException => Future.successful(List.empty)
+          })
     }
   }
 
@@ -185,11 +177,7 @@ class AccountsService @Inject()(daemonCache: DaemonCache, synchronizerManager: A
     checkSyncStatus(accountInfo)
     daemonCache.withAccountAndWallet(accountInfo) {
       case (account, wallet) =>
-        account.batchedErc20Operations(offset, batch).flatMap { operations =>
-          operations.traverse { case (coreOp, erc20Op) =>
-            Operations.getErc20View(erc20Op, coreOp, wallet, account)
-          }
-        }
+        account.batchedErc20Operations(wallet, offset, batch)
     }
   }
 
@@ -316,13 +304,9 @@ class AccountsService @Inject()(daemonCache: DaemonCache, synchronizerManager: A
             publisher.publishOperation(view, account, wallet, accountInfo.poolName)
           ))
         val pushErc20Future: Future[Unit] = if (account.isInstanceOfEthereumLikeAccount) {
-          account.erc20Operations.flatMap { operations =>
-            Future
-              .sequence(operations.map { case (operation, erc20Operation) => Operations.getErc20View(erc20Operation, operation, wallet, account) })
-              .map(_.map(view =>
-                publisher.publishERC20Operation(view, account, wallet, accountInfo.poolName)
-              ))
-          }
+          account.erc20Operations(wallet).map(_.map(view =>
+            publisher.publishERC20Operation(view, account, wallet, accountInfo.poolName)
+          ))
         } else Future.unit
         pushOperationFuture.flatMap(_ => pushErc20Future)
     }

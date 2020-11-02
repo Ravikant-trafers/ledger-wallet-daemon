@@ -25,13 +25,7 @@ object Operations {
   }
 
   def getErc20View(erc20Operation: core.ERC20LikeOperation, operation: core.Operation, wallet: core.Wallet, account: core.Account): Future[OperationView] = {
-    getView(operation, wallet, account).map { view =>
-      val tvOpt = view.transaction.map {
-        case e: EthereumTransactionView => e.copy(erc20 = Some(ERC20.from(erc20Operation)))
-        case _ => throw InvalidCurrencyForErc20Operation()
-      }
-      view.copy(opType = erc20Operation.getOperationType, transaction = tvOpt)
-    }
+    getView(operation, wallet, account).map { view => getErc20View(erc20Operation, view)}
   }
 
   def getErc20View(erc20Operation: core.ERC20LikeOperation, operation: OperationView): OperationView = {

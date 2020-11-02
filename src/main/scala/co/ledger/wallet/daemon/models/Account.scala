@@ -37,17 +37,17 @@ object Account extends Logging {
       a.asEthereumLikeAccount().getERC20Balances(contractList).map(_.asScala.map(coreBi => coreBi.asScala))
     }
 
-    def erc20Operations(contract: String)(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
-      Account.erc20Operations(contract, a)
+    def erc20Operations(w: Wallet, contract: String)(implicit ec: ExecutionContext): Future[List[OperationView]] =
+      Account.erc20Operations(contract, w, a)
 
-    def erc20Operations(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
-      Account.erc20Operations(a)
+    def erc20Operations(w: Wallet)(implicit ec: ExecutionContext): Future[List[OperationView]] =
+      Account.erc20Operations(w, a)
 
-    def batchedErc20Operations(contract: String, limit: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
-      Account.batchedErc20Operations(contract, a, limit, batch)
+    def batchedErc20Operations(w: Wallet, contract: String, limit: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[OperationView]] =
+      Account.batchedErc20Operations(contract, w, a, limit, batch)
 
-    def batchedErc20Operations(limit: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
-      Account.batchedErc20Operations(a, limit, batch)
+    def batchedErc20Operations(w: Wallet, limit: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[OperationView]] =
+      Account.batchedErc20Operations(w, a, limit, batch)
 
     def erc20Accounts: Either[Exception, List[core.ERC20LikeAccount]] =
       Account.erc20Accounts(a)
@@ -162,44 +162,48 @@ object Account extends Logging {
       balance <- account.getBalance()
     } yield balance.asScala
 
-  def erc20Operations(contract: String, a: core.Account)(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
-    asERC20Account(contract, a).liftTo[Future].flatMap(erc20Operations)
+  def erc20Operations(contract: String, w: Wallet, a: core.Account)(implicit ec: ExecutionContext): Future[List[OperationView]] =
+    asERC20Account(contract, a).liftTo[Future].flatMap(erc20Operations(w, a, _))
 
-  def erc20Operations(a: core.Account)(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
+  def erc20Operations(w: Wallet, a: core.Account)(implicit ec: ExecutionContext): Future[List[OperationView]] =
     for {
       account <- asETHAccount(a).liftTo[Future]
-      ops <- account.getERC20Accounts.asScala.toList.flatTraverse(erc20Operations)
+      ops <- account.getERC20Accounts.asScala.toList.flatTraverse(erc20Operations(w, a, _))
     } yield ops
 
-  private def erc20Operations(a: core.ERC20LikeAccount)(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
-    a.queryOperations().complete().execute().map(_.asScala.toList).map { coreOps =>
+  private def erc20Operations(w: Wallet, a: core.Account, aErc20: core.ERC20LikeAccount)(implicit ec: ExecutionContext): Future[List[OperationView]] =
+    aErc20.queryOperations().complete().execute().map(_.asScala.toList).map { coreOps =>
       val hashToCoreOps = coreOps.map(coreOp => coreOp.asEthereumLikeOperation().getTransaction.getHash -> coreOp).toMap
-      val erc20Ops = a.getOperations.asScala.toList
+      val erc20Ops = aErc20.getOperations.asScala.toList
       erc20Ops.filter(erc20Op => {
         val opFound = hashToCoreOps.contains(erc20Op.getHash)
         if (!opFound) {
-          error(s"Requested operation ${erc20Op.getHash} from account ${a.getAddress} has been skipped due to inconsistencies.")
+          error(s"Requested operation ${erc20Op.getHash} from account ${aErc20.getAddress} has been skipped due to inconsistencies.")
         }
         opFound
       }
-      ).map(erc20Op => (hashToCoreOps(erc20Op.getHash), erc20Op))
-    }
+      ).map(erc20Op => Operations.getErc20View(erc20Op, hashToCoreOps(erc20Op.getHash), w, a)).sequence
+    }.flatten
 
-  def batchedErc20Operations(contract: String, a: core.Account, offset: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
-    asERC20Account(contract, a).liftTo[Future].flatMap(erc20Acc => batchedErc20Operations(erc20Acc, offset, batch))
+  def batchedErc20Operations(contract: String, w: Wallet, a: core.Account, offset: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[OperationView]] =
+    asERC20Account(contract, a).liftTo[Future].flatMap(erc20Acc => batchedErc20Operations(w, a, erc20Acc, offset, batch))
 
-  def batchedErc20Operations(a: core.Account, offset: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
+  def batchedErc20Operations(w: Wallet, a: core.Account, offset: Int, batch: Int)
+                            (implicit ec: ExecutionContext): Future[List[OperationView]] =
     for {
       account <- asETHAccount(a).liftTo[Future]
-      ops = account.getERC20Accounts.asScala.toList.map(erc20Account => batchedErc20Operations(erc20Account, offset, batch))
+      ops = account.getERC20Accounts.asScala.toList.map(erc20Account => batchedErc20Operations(w, a, erc20Account, offset, batch))
       result <- Future.sequence(ops).map(_.flatten)
     } yield result
 
-  private def batchedErc20Operations(a: core.ERC20LikeAccount, offset: Int, batch: Int)(implicit ec: ExecutionContext): Future[List[(core.Operation, core.ERC20LikeOperation)]] =
-    a.queryOperations().offset(offset).limit(batch).addOrder(OperationOrderKey.DATE, true).complete().execute().map(_.asScala.toList).map { coreOps =>
-      val hashToERC20 = a.getOperations.asScala.toList.map(erc20Op => erc20Op.getHash -> erc20Op).toMap
-      coreOps.map(coreOp => (coreOp, hashToERC20(coreOp.asEthereumLikeOperation().getTransaction.getHash)))
-    }
+  private def batchedErc20Operations(w: Wallet, acc: Account, a: core.ERC20LikeAccount, offset: Int, batch: Int)
+                                    (implicit ec: ExecutionContext): Future[List[OperationView]] =
+    a.queryOperations().offset(offset).limit(batch).addOrder(OperationOrderKey.DATE, true).complete().execute()
+      .map(_.asScala.toList)
+      .map { coreOps =>
+        val hashToERC20 = a.getOperations.asScala.toList.map(erc20Op => erc20Op.getHash -> erc20Op).toMap
+        coreOps.map(coreOp => Operations.getErc20View(hashToERC20(coreOp.asEthereumLikeOperation().getTransaction.getHash), coreOp, w, acc)).sequence
+      }.flatten
 
   def operationCounts(a: core.Account)(implicit ex: ExecutionContext): Future[Map[core.OperationType, Int]] =
     a.queryOperations().addOrder(OperationOrderKey.DATE, true).partial().execute().map { os =>
