@@ -9,6 +9,7 @@ import co.ledger.wallet.daemon.libledger_core.async.LedgerCoreExecutionContext
 import co.ledger.wallet.daemon.models.Account.RichCoreAccount
 import co.ledger.wallet.daemon.models.Operations
 import co.ledger.wallet.daemon.models.Operations.OperationView
+import co.ledger.wallet.daemon.models.coins.EthereumTransactionView
 import co.ledger.wallet.daemon.services.AccountOperationsPublisher._
 
 import scala.collection.JavaConverters._
@@ -33,14 +34,13 @@ class AccountOperationsPublisher(account: Account, wallet: Wallet, poolName: Poo
   }
 
   override def receive: Receive = LoggingReceive {
-
     case NewOperationEvent(opId) if account.isInstanceOfEthereumLikeAccount =>
-      fetchOperation(opId).fold(log.warning(s"operation not found: $opId"))( op => {
-        publisher.publishOperation(op._2, account, wallet, poolName.name)
-        publishERC20Operations(op._1)
+      fetchOperationView(opId).fold(log.warning(s"operation not found: $opId"))(op => {
+        publisher.publishOperation(op, account, wallet, poolName.name)
+        publishERC20Operations(op)
       })
 
-    case NewOperationEvent(opId) => fetchOperation(opId).fold(log.warning(s"operation not found: $opId"))( op => publisher.publishOperation(op._2, account, wallet, poolName.name))
+    case NewOperationEvent(opId) => fetchOperation(opId).fold(log.warning(s"operation not found: $opId"))(op => publisher.publishOperation(op._2, account, wallet, poolName.name))
     case DeletedOperationEvent(opId) => publisher.publishDeletedOperation(opId.uid, account, wallet, poolName.name)
     case PublishOperation(op) => publisher.publishOperation(op, account, wallet, poolName.name)
   }
@@ -54,29 +54,31 @@ class AccountOperationsPublisher(account: Account, wallet: Wallet, poolName: Poo
     opView <- OptionT.liftF(Operations.getView(op, wallet, account))
   } yield (op, opView)
 
+  private def fetchOperationView(id: OperationId): OptionT[Future, OperationView] = OptionT(account.operationView(id.uid, 1, wallet))
 
-  private def publishERC20Operations(operation: Operation): Future[Unit] = {
+  private def publishERC20Operations(operation: OperationView): Future[Unit] = {
+    Future {
+      val erc20Accounts = account.asEthereumLikeAccount().getERC20Accounts.asScala
 
-    val erc20Accounts = account.asEthereumLikeAccount().getERC20Accounts.asScala
-    val tx = operation.asEthereumLikeOperation().getTransaction
-    val sender = tx.getSender.toEIP55
-    val receiver = tx.getReceiver.toEIP55
+      def getOperationsFromContractAddress(contractAddress: String, txHash: String) = erc20Accounts
+        .find(_.getToken.getContractAddress.equalsIgnoreCase(contractAddress)).toSeq
+        .flatMap(_.getOperations.asScala.filter(_.getHash.equalsIgnoreCase(txHash)))
 
-    def getOperationsFromContractAddress(contractAddress: String) = erc20Accounts
-      .find(_.getToken.getContractAddress.equalsIgnoreCase(contractAddress)).toSeq
-      .flatMap(_.getOperations.asScala.filter(_.getHash.equalsIgnoreCase(tx.getHash)))
-
-    val senderOps = getOperationsFromContractAddress(sender)
-    val receiverOps = getOperationsFromContractAddress(receiver)
-
-    Future.sequence(
-      (senderOps ++ receiverOps) // Do the order have a meaning ? If not, TODO: retrieve operations in one way
-        .map(erc20op => Operations.getErc20View(erc20op, operation, wallet, account)
-          .map(publisher.publishERC20Operation(_, account, wallet, poolName.name)))
-    ).map( opCounts => log.debug(s"${opCounts.length} operation(s) published from $accountInfo"))
+      operation.transaction.map {
+        case tx: EthereumTransactionView =>
+          val senderOps = getOperationsFromContractAddress(tx.sender, tx.hash)
+          val receiverOps = getOperationsFromContractAddress(tx.receiver, tx.hash)
+          // Future.sequence(
+          val operations = (senderOps ++ receiverOps) // Do the order have a meaning ? If not, TODO: retrieve operations in one way
+            .map(erc20op => {
+              val erc20View = Operations.getErc20View(erc20op, operation)
+              publisher.publishERC20Operation(erc20View, account, wallet, poolName.name)
+              erc20op
+            })
+          log.debug(s"${operations.length} operation(s) published from $accountInfo")
+      }
+    }
   }
-
-
 }
 
 object AccountOperationsPublisher {

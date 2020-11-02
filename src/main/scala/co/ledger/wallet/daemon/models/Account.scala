@@ -2,26 +2,24 @@ package co.ledger.wallet.daemon.models
 
 import java.util.{Calendar, Date}
 
-import cats.instances.future._
-import cats.instances.list._
-import cats.syntax.either._
-import cats.syntax.traverse._
+import cats.implicits._
 import co.ledger.core
 import co.ledger.core._
 import co.ledger.core.implicits.{InvalidEIP55FormatException, NotEnoughFundsException, UnsupportedOperationException, _}
 import co.ledger.wallet.daemon.clients.ApiClient.XlmFeeInfo
 import co.ledger.wallet.daemon.clients.ClientFactory
+import co.ledger.wallet.daemon.configurations.DaemonConfiguration
 import co.ledger.wallet.daemon.controllers.TransactionsController._
 import co.ledger.wallet.daemon.exceptions._
 import co.ledger.wallet.daemon.libledger_core.async.LedgerCoreExecutionContext
 import co.ledger.wallet.daemon.models.Currency._
+import co.ledger.wallet.daemon.models.Operations.OperationView
 import co.ledger.wallet.daemon.models.coins.Coin.TransactionView
 import co.ledger.wallet.daemon.models.coins._
 import co.ledger.wallet.daemon.schedulers.observers.{SynchronizationEventReceiver, SynchronizationResult}
 import co.ledger.wallet.daemon.services.SyncStatus
 import co.ledger.wallet.daemon.utils.HexUtils
 import co.ledger.wallet.daemon.utils.Utils.{RichBigInt, RichCoreBigInt}
-import co.ledger.wallet.daemon.configurations.DaemonConfiguration
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.google.common.primitives.UnsignedInteger
 import com.twitter.inject.Logging
@@ -106,6 +104,8 @@ object Account extends Logging {
 
     def operation(uid: String, fullOp: Int)(implicit ec: ExecutionContext): Future[Option[core.Operation]] =
       Account.operation(uid, fullOp, a)
+
+    def operationView(uid: String, fullOp: Int, w: Wallet)(implicit ec: ExecutionContext): Future[Option[OperationView]] = Account.operationView(uid, fullOp, w, a)
 
     def operations(offset: Int, batch: Int, fullOp: Int)(implicit ec: ExecutionContext): Future[Seq[core.Operation]] =
       Account.operations(offset, batch, fullOp, a.queryOperations())
@@ -219,11 +219,11 @@ object Account extends Logging {
     } yield AccountView(walletName, a.getIndex, b, opsCount, a.getRestoreKey, cv, syncStatus)
 
   def erc20AccountView(
-      a: core.Account,
-      erc20Account: ERC20LikeAccount,
-      wallet: Wallet,
-      syncStatus: SyncStatus
-  )(implicit ex: ExecutionContext): Future[ERC20FullAccountView] = {
+                        a: core.Account,
+                        erc20Account: ERC20LikeAccount,
+                        wallet: Wallet,
+                        syncStatus: SyncStatus
+                      )(implicit ex: ExecutionContext): Future[ERC20FullAccountView] = {
     for {
       balance <- a.erc20Balance(erc20Account.getToken.getContractAddress)
     } yield ERC20FullAccountView.fromERC20Account(
@@ -481,6 +481,16 @@ object Account extends Logging {
     }
   }
 
+  def operationView(uid: String, fullOp: Int, w: Wallet, a: core.Account)(implicit ec: ExecutionContext): Future[Option[OperationView]] = {
+    val q = a.queryOperations()
+    q.filter().opAnd(core.QueryFilter.operationUidEq(uid))
+    (if (fullOp > 0) q.complete().execute()
+    else q.partial().execute()).flatMap { ops =>
+      debug(s"Found ${ops.size()} operation(s) with uid : $uid")
+      ops.asScala.headOption.map(Operations.getView(_, w, a)).sequence
+    }
+  }
+
   def firstOperation(a: core.Account)(implicit ec: ExecutionContext): Future[Option[core.Operation]] = {
     a.queryOperations().addOrder(OperationOrderKey.DATE, false).limit(1).partial().execute()
       .map { ops => ops.asScala.toList.headOption }
@@ -655,16 +665,16 @@ object ERC20FullAccountView {
                         erc20Balance: scala.BigInt,
                         walletName: String
                       ): ERC20FullAccountView =
-  ERC20FullAccountView(
-    walletName,
-    baseAccount.getIndex,
-    erc20Balance,
-    status,
-    erc20Account.getToken.getContractAddress,
-    erc20Account.getToken.getName,
-    erc20Account.getToken.getNumberOfDecimal,
-    erc20Account.getToken.getSymbol
-  )
+    ERC20FullAccountView(
+      walletName,
+      baseAccount.getIndex,
+      erc20Balance,
+      status,
+      erc20Account.getToken.getContractAddress,
+      erc20Account.getToken.getName,
+      erc20Account.getToken.getNumberOfDecimal,
+      erc20Account.getToken.getSymbol
+    )
 }
 
 case class DerivationView(

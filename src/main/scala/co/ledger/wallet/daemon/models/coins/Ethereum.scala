@@ -53,7 +53,7 @@ object EthereumTransactionView {
       tx.getGasPrice.toString,
       tx.getGasLimit.toString,
       tx.getDate,
-      tx.getStatus()
+      tx.getStatus
     )
   }
 
