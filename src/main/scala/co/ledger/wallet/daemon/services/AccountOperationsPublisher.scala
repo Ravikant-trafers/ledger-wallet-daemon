@@ -40,7 +40,7 @@ class AccountOperationsPublisher(account: Account, wallet: Wallet, poolName: Poo
         publishERC20Operations(op)
       })
 
-    case NewOperationEvent(opId) => fetchOperation(opId).fold(log.warning(s"operation not found: $opId"))(op => publisher.publishOperation(op._2, account, wallet, poolName.name))
+    case NewOperationEvent(opId) => fetchOperationView(opId).fold(log.warning(s"operation not found: $opId"))(op => publisher.publishOperation(op, account, wallet, poolName.name))
     case DeletedOperationEvent(opId) => publisher.publishDeletedOperation(opId.uid, account, wallet, poolName.name)
     case PublishOperation(op) => publisher.publishOperation(op, account, wallet, poolName.name)
   }
@@ -48,11 +48,6 @@ class AccountOperationsPublisher(account: Account, wallet: Wallet, poolName: Poo
   private def listenOperationsEvents(account: Account): Unit = eventReceiver.listenEvents(account.getEventBus)
 
   private def stopListeningEvents(account: Account): Unit = eventReceiver.stopListeningEvents(account.getEventBus)
-
-  private def fetchOperation(id: OperationId): OptionT[Future, (Operation, OperationView)] = for {
-    op <- OptionT(account.operation(id.uid, 1))
-    opView <- OptionT.liftF(Operations.getView(op, wallet, account))
-  } yield (op, opView)
 
   private def fetchOperationView(id: OperationId): OptionT[Future, OperationView] = OptionT(account.operationView(id.uid, 1, wallet))
 
