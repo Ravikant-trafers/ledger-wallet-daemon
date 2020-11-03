@@ -8,3 +8,5 @@ services:
       interval: 5s
       timeout: 5s
       retries: 3
+    ports:
+        - "5672:5672"
